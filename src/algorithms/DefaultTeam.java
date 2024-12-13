@@ -86,6 +86,7 @@ public class DefaultTeam {
         @Override
         public Iterator<Point> iterator() {
             return new Iterator<>() {
+                int prev = -1;
                 int curId = first;
                 @Override
                 public boolean hasNext() {
@@ -95,13 +96,14 @@ public class DefaultTeam {
                 @Override
                 public Point next() {
                     Point res = simplePointArr[curId];
+                    prev = curId;
                     curId = nexts[curId];
                     return res;
                 }
 
                 @Override
                 public void remove() {
-                    removeId(curId);
+                    removeId(prev);
                 }
             };
         }
@@ -205,6 +207,7 @@ public class DefaultTeam {
         edgeMap = new boolean[_points.size() << pointCountShift];
         simplePointArr = new Point[_points.size()];
         for (java.awt.Point p: _points) {
+            if (pointMap.containsKey(p)) continue;
             pointList.add(p);
             Point newPoint = new Point(pointList.size() - 1);
             pointMap.put(p, newPoint);
@@ -226,30 +229,35 @@ public class DefaultTeam {
         return edgeMap[(p.id << pointCountShift) + q.id];
     }
 
+    // gambling is always the answer
     private ArrayList<Point> gamble(ArrayList<Point> points, int edgeThreshold) {
         ArrayList<Point> prev = points;
         Object lock = new Object();
         while (true) {
-            ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+            PointSet pointSet = new PointSet(prev);
+            int threadCount = Runtime.getRuntime().availableProcessors() - 1; // generously leave one processor alone
+            int itPerThread = 200;
+            ExecutorService pool = Executors.newFixedThreadPool(threadCount);
             Semaphore semaphore = new Semaphore(0);
             var next = new Object() {
                 private ArrayList<Point> next;
             };
             next.next = prev;
-            int itCount = Runtime.getRuntime().availableProcessors() - 1; // generously leave one processor alone
-            for (int i = 0; i < itCount; i++) {
+            for (int i = 0; i < threadCount; i++) {
                 pool.execute(() -> {
-                    ArrayList<Point> res = calculateSet(points, edgeThreshold);
-                    synchronized (lock) {
-                        if (res.size() < next.next.size()) {
-                            next.next = res;
+                    for (int j = 0; j < itPerThread; j++) {
+                        ArrayList<Point> res = calculateSet(pointSet, edgeThreshold);
+                        synchronized (lock) {
+                            if (res.size() < next.next.size()) {
+                                next.next = res;
+                            }
                         }
+                        semaphore.release(1);
                     }
-                    semaphore.release(1);
                 });
             }
             try {
-                semaphore.acquire(itCount);
+                semaphore.acquire(threadCount * itPerThread);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
@@ -262,22 +270,38 @@ public class DefaultTeam {
         return prev;
     }
 
-    private ArrayList<Point> calculateSet(ArrayList<Point> points, int edgeThreshold) {
+    private ArrayList<Point> calculateSet(PointSet points, int edgeThreshold) {
         ArrayList<Point> dominatingSet = new ArrayList<>();
-        HashSet<Point> uncovered = new HashSet<>(points);
+        PointSet uncovered = new PointSet(points);
         Random random = new Random();
+
+        Point[] uncoveredArr = new Point[uncovered.size];
+        {
+            int i = -1;
+            for (Point p: uncovered) {
+                uncoveredArr[++i] = p;
+            }
+        }
+        ArrayList<Point>[] neighbors = new ArrayList[pointCount];
+        for (Point p : uncoveredArr) {
+            ArrayList<Point> neighborsP = new ArrayList<>();
+            for (Point q : uncoveredArr) {
+                if (isEdge(p, q, edgeThreshold)) {
+                    neighborsP.add(q);
+                }
+            }
+            neighbors[p.id] = neighborsP;
+        }
 
         // Improved Greedy Algorithm with Weighted Selection
         while (!uncovered.isEmpty()) {
-            double bestScore = Double.NEGATIVE_INFINITY;
+            int bestScore = Integer.MIN_VALUE;
             ArrayList<Point> bestPoints = new ArrayList<>();
 
             for (Point candidate : uncovered) {
-                int newCoverage = countNewCoverage(candidate, uncovered, edgeThreshold);
-                int overlap = countOverlap(candidate, uncovered, edgeThreshold);
 
                 // Weighted score: prioritize high coverage and low overlap
-                double score = newCoverage - 0.5 * overlap;
+                int score = countNewCoverage(neighbors, candidate, uncovered, edgeThreshold);
                 if (score >= bestScore) {
                     if (score > bestScore) {
                         bestScore = score;
@@ -295,16 +319,16 @@ public class DefaultTeam {
         }
 
         // Post-processing with Local Search
-        refineDominatingSet(dominatingSet, points, edgeThreshold);
+        //refineDominatingSet(dominatingSet, points, edgeThreshold);
 
         return dominatingSet;
     }
 
     // Count new vertices covered by adding candidate to the Dominating Set
-    private int countNewCoverage(Point candidate, Set<Point> uncovered, int edgeThreshold) {
+    private int countNewCoverage(ArrayList<Point>[] neighbors, Point candidate, PointSet uncovered, int edgeThreshold) {
         int count = 0;
-        for (Point p : uncovered) {
-            if (isEdge(candidate, p, edgeThreshold)) {
+        for (Point p : neighbors[candidate.id]) {
+            if (uncovered.containsId(p.id)) {
                 count++;
             }
         }
@@ -312,7 +336,7 @@ public class DefaultTeam {
     }
 
     // Count overlap: how many already covered points the candidate dominates
-    private int countOverlap(Point candidate, Set<Point> uncovered, int edgeThreshold) {
+    private int countOverlap(Point candidate, PointSet uncovered, int edgeThreshold) {
         int count = 0;
         for (Point p : uncovered) {
             if (isEdge(candidate, p, edgeThreshold)) {

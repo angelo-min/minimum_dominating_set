@@ -164,10 +164,13 @@ public class CustomEvaluator {
                 }
             });
         }
-        try {
-            pool.awaitTermination(1_000_000, TimeUnit.DAYS);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+
+        while (resultCount.get() < 100) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         System.out.println("--------------------------------------");

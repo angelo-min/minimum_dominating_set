@@ -81,11 +81,10 @@ public class CustomEvaluator {
         result = new AtomicLong(Double.doubleToLongBits(0.0));
         resultCount = new AtomicInteger(0);
         fails = 0;
-        ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
         for(int i = 0; i < 100; ++i) {
             int index = i;
-            pool.execute(() -> {
+            //pool.execute(() -> {
                 ArrayList<Point> points = new ArrayList();
 
                 try {
@@ -128,9 +127,8 @@ public class CustomEvaluator {
 
                         System.out.println("Input " + index + " successfully read. Computing...");
                         ArrayList<Point> pts = (new DefaultTeam()).calculDominatingSet(points, edgeThreshold);
-                        System.out.println("   >>> Computation completed. Evaluating... ");
                         if (!Evaluator.isValide(pts, points, edgeThreshold)) {
-                            ++fails;
+                            ++fails; // dont care enough to make fails atomic, there shouldnt be any anyway
                         } else {
                             long expected, calculated;
                             do {
@@ -139,10 +137,8 @@ public class CustomEvaluator {
                             } while (!result.compareAndSet(expected, calculated));
                             resultCount.addAndGet(1);
                         }
-
-                        System.out.println("   >>> Evaluation completed. Fails: " + fails);
                         double var10001 = Double.longBitsToDouble(result.get()) / resultCount.get();
-                        System.out.println("   >>> Average score (excluding fails): " + var10001);
+                        System.out.println("   >>> Average score (excluding fails): " + var10001 + ", fails: " + fails);
                     } catch (IOException var20) {
                         System.err.println("Exception: interrupted I/O.");
                     } finally {
@@ -156,13 +152,13 @@ public class CustomEvaluator {
                 } catch (Exception var22) {
                     Exception e = var22;
                     ++fails;
-                    if (!(e instanceof FileNotFoundException) && !(e instanceof IOException)) {
+                    if (!(e instanceof IOException)) {
                         System.err.println("Computation aborted with an exception." + e);
                     } else {
                         System.err.println("Input file not found.");
                     }
                 }
-            });
+            //});
         }
 
         while (resultCount.get() < 100) {

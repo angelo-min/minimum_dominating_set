@@ -1,6 +1,11 @@
 package algorithms;
 
+import java.lang.ref.Reference;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 final class Point {
     public final int id;
@@ -213,7 +218,7 @@ public class DefaultTeam {
                 edgeMap[(p.id << pointCountShift) + q.id] = pointList.get(p.id).distance(pointList.get(q.id)) < edgeThreshold;
             }
         }
-        ArrayList<Point> res = calculateSet(new ArrayList<>(points), edgeThreshold);
+        ArrayList<Point> res = gamble(new ArrayList<>(points), edgeThreshold);
 
         return new ArrayList<>(res.stream().map(p -> pointList.get(p.id)).toList());
     }
@@ -221,14 +226,51 @@ public class DefaultTeam {
         return edgeMap[(p.id << pointCountShift) + q.id];
     }
 
+    private ArrayList<Point> gamble(ArrayList<Point> points, int edgeThreshold) {
+        ArrayList<Point> prev = points;
+        Object lock = new Object();
+        while (true) {
+            ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+            Semaphore semaphore = new Semaphore(0);
+            var next = new Object() {
+                private ArrayList<Point> next;
+            };
+            next.next = prev;
+            int itCount = Runtime.getRuntime().availableProcessors() - 1; // generously leave one processor alone
+            for (int i = 0; i < itCount; i++) {
+                pool.execute(() -> {
+                    ArrayList<Point> res = calculateSet(points, edgeThreshold);
+                    synchronized (lock) {
+                        if (res.size() < next.next.size()) {
+                            next.next = res;
+                        }
+                    }
+                    semaphore.release(1);
+                });
+            }
+            try {
+                semaphore.acquire(itCount);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            if (next.next.size() >= prev.size()) {
+                break;
+            }
+            prev = next.next;
+            System.out.println("Current best: " + prev.size());
+        }
+        return prev;
+    }
+
     private ArrayList<Point> calculateSet(ArrayList<Point> points, int edgeThreshold) {
         ArrayList<Point> dominatingSet = new ArrayList<>();
         HashSet<Point> uncovered = new HashSet<>(points);
+        Random random = new Random();
 
         // Improved Greedy Algorithm with Weighted Selection
         while (!uncovered.isEmpty()) {
-            Point bestPoint = null;
             double bestScore = Double.NEGATIVE_INFINITY;
+            ArrayList<Point> bestPoints = new ArrayList<>();
 
             for (Point candidate : uncovered) {
                 int newCoverage = countNewCoverage(candidate, uncovered, edgeThreshold);
@@ -236,13 +278,17 @@ public class DefaultTeam {
 
                 // Weighted score: prioritize high coverage and low overlap
                 double score = newCoverage - 0.5 * overlap;
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestPoint = candidate;
+                if (score >= bestScore) {
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestPoints.clear();
+                    }
+                    bestPoints.add(candidate);
                 }
             }
 
-            if (bestPoint != null) {
+            if (!bestPoints.isEmpty()) {
+                Point bestPoint = bestPoints.get(random.nextInt(bestPoints.size()));
                 dominatingSet.add(bestPoint);
                 updateUncovered(bestPoint, uncovered, edgeThreshold);
             }

@@ -298,7 +298,7 @@ public class DefaultTeam {
 
     // Check if a point can replace another in the Dominating Set
     private boolean canReplacePoint(Point toReplace, Point candidate, ArrayList<Point> dominatingSet, ArrayList<Point> points, int edgeThreshold) {
-        HashSet<Point> coverWithCandidate = new HashSet<>();
+        PointSet coverWithCandidate = new PointSet();
         
         for (Point dominator : dominatingSet) {
             Point effective = dominator.equals(toReplace) ? candidate : dominator;

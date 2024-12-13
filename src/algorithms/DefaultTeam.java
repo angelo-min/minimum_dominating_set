@@ -103,7 +103,7 @@ public class DefaultTeam {
 
                 @Override
                 public void remove() {
-                    removeId(prev);
+                    removeId(prev); // in the previous submission this was broken but we didn't use this method
                 }
             };
         }
@@ -239,7 +239,7 @@ public class DefaultTeam {
             int itPerThread = 200;
             ExecutorService pool = Executors.newFixedThreadPool(threadCount);
             Semaphore semaphore = new Semaphore(0);
-            var next = new Object() {
+            var next = new Object() { // otherwise it complains about effective final
                 private ArrayList<Point> next;
             };
             next.next = prev;
@@ -275,14 +275,14 @@ public class DefaultTeam {
         PointSet uncovered = new PointSet(points);
         Random random = new Random();
 
-        Point[] uncoveredArr = new Point[uncovered.size];
+        Point[] uncoveredArr = new Point[uncovered.size]; // accelerate iteration
         {
             int i = -1;
             for (Point p: uncovered) {
                 uncoveredArr[++i] = p;
             }
         }
-        ArrayList<Point>[] neighbors = new ArrayList[pointCount];
+        ArrayList<Point>[] neighbors = new ArrayList[pointCount]; // neighbor list structure
         for (Point p : uncoveredArr) {
             ArrayList<Point> neighborsP = new ArrayList<>();
             for (Point q : uncoveredArr) {
@@ -328,13 +328,14 @@ public class DefaultTeam {
     private int countNewCoverage(ArrayList<Point>[] neighbors, Point candidate, PointSet uncovered, int edgeThreshold) {
         int count = 0;
         for (Point p : neighbors[candidate.id]) {
-            if (uncovered.containsId(p.id)) {
+            if (uncovered.containsId(p.id)) { // if we happened to remove p, ignore it
                 count++;
             }
         }
         return count;
     }
 
+    // exact same as above
     // Count overlap: how many already covered points the candidate dominates
     private int countOverlap(Point candidate, PointSet uncovered, int edgeThreshold) {
         int count = 0;
